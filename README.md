@@ -18,6 +18,11 @@ Todo funciona **sin servidor**: tus datos se guardan solo en tu teléfono
 - **Progreso**: gráfico de peso con línea de meta, calorías y ejercicio por semana.
 - **Gamificación**: puntos, niveles, rachas, medallas, reto diario y mensajes
   motivacionales con confeti 🎉.
+- **Mascota animada** 🦊 (Pancho): vive en pantalla, te habla con globos de
+  diálogo y te avisa cuándo tomar agua y comer. Tócala para recibir ánimo y
+  elige tu animalito favorito en Ajustes.
+- **Recetas de desayuno saludables** con productos chilenos (palta, merkén,
+  quesillo, etc.), con ingredientes, preparación y registro directo al desayuno.
 - **Notificaciones** para comer y beber agua (al instalar como PWA en iPhone).
 
 ## 🚀 Probar localmente
@@ -64,6 +69,8 @@ js/gamify.js          Puntos, niveles, rachas, logros
 js/reminders.js       Horarios, recordatorios y notificaciones
 js/foods.js           Base local de alimentos
 js/exercises.js       Base local de ejercicios (valores MET)
+js/recipes.js         Recetas de desayuno saludables (productos chilenos)
+js/mascot.js          Mascota animada que habla y recuerda
 js/charts.js          Gráficos SVG sin dependencias
 js/ui.js              Helpers de UI (toasts, modales, confeti)
 icons/                Iconos PWA

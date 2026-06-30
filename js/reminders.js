@@ -5,8 +5,13 @@ import { getSettings, setSettings, getLog, todayKey } from './store.js';
 let waterTimer = null;
 let mealTimers = [];
 let onAlarm = () => {};
+let onReminder = () => {};
 
 export function setAlarmHandler(fn) { onAlarm = fn; }
+
+// Handler que reacciona dentro de la app cuando se dispara un recordatorio
+// programado (por ejemplo, para que la mascota hable). type: 'meal' | 'water'.
+export function setReminderHandler(fn) { onReminder = fn; }
 
 export function notificationsSupported() {
   return 'Notification' in window;
@@ -23,23 +28,33 @@ export async function requestNotifications() {
   }
 }
 
-// Muestra una notificación (vía service worker si está activo) o cae en alarma en-app.
-export async function notify(title, body) {
-  const canNotify = notificationsSupported() && Notification.permission === 'granted';
-  if (canNotify) {
-    try {
-      const reg = await navigator.serviceWorker?.getRegistration();
-      if (reg) {
-        reg.showNotification(title, { body, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: title });
-        return;
-      }
-      new Notification(title, { body, icon: 'icons/icon-192.png' });
-      return;
-    } catch {
-      /* cae a alarma en-app */
+// Intenta mostrar una notificación del sistema. Devuelve true si lo logró.
+async function showSystem(title, body) {
+  if (!(notificationsSupported() && Notification.permission === 'granted')) return false;
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration();
+    if (reg) {
+      reg.showNotification(title, { body, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: title });
+      return true;
     }
+    new Notification(title, { body, icon: 'icons/icon-192.png' });
+    return true;
+  } catch {
+    return false;
   }
-  onAlarm(title, body); // toast dentro de la app
+}
+
+// Notificación puntual (botón de prueba): sistema o, si no, alarma en-app.
+export async function notify(title, body) {
+  const ok = await showSystem(title, body);
+  if (!ok) onAlarm(title, body);
+}
+
+// Dispara un recordatorio programado: reacciona dentro de la app (mascota)
+// y además intenta una notificación del sistema (para PWA en segundo plano).
+export async function fireReminder(type, title, body) {
+  onReminder(type, title, body);
+  await showSystem(title, body);
 }
 
 function parseTime(hhmm) {
@@ -89,7 +104,7 @@ export function scheduleReminders() {
     const delay = t - now;
     if (delay > 0) {
       const id = setTimeout(() => {
-        notify(`${meal.emoji} Hora de ${meal.name}`, 'Registra tu comida para ganar puntos por comer a tiempo.');
+        fireReminder('meal', `${meal.emoji} Hora de ${meal.name}`, 'Registra tu comida para ganar puntos por comer a tiempo.');
       }, delay);
       mealTimers.push(id);
     }
@@ -106,7 +121,7 @@ export function scheduleReminders() {
         const log = getLog();
         const goalMl = settings.waterGoalGlasses * settings.glassMl;
         if (log.water < goalMl) {
-          notify('💧 Hora de tomar agua', `Llevas ${Math.round(log.water / settings.glassMl)} de ${settings.waterGoalGlasses} vasos. ¡Sigue así!`);
+          fireReminder('water', '💧 Hora de tomar agua', `Llevas ${Math.round(log.water / settings.glassMl)} de ${settings.waterGoalGlasses} vasos. ¡Sigue así!`);
         }
       }
       scheduleNextWater();

@@ -21,6 +21,8 @@ const DEFAULT_STATE = {
     ],
     exerciseGoalMin: 30,
     notificationsEnabled: false,
+    mascotName: 'Pancho',
+    mascotEmoji: '🦊',
   },
   logs: {}, // { 'YYYY-MM-DD': { food:[], water:0, exercise:[], weight:null, mealsHit:{} } }
   game: {

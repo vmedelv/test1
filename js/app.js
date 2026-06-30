@@ -7,7 +7,11 @@ import * as charts from './charts.js';
 import * as reminders from './reminders.js';
 import { FOODS } from './foods.js';
 import { EXERCISES } from './exercises.js';
+import { RECIPES } from './recipes.js';
+import * as mascot from './mascot.js';
 import { h, clear, toast, celebrate, confetti, modal, randomMotivation } from './ui.js';
+
+const MASCOT_ANIMALS = ['🦊', '🐶', '🐱', '🐼', '🐧', '🐨', '🦉', '🐢', '🐰', '🐯'];
 
 const app = document.getElementById('app');
 const nav = document.getElementById('nav');
@@ -50,13 +54,40 @@ function exerciseMinutes(log = store.getLog()) {
 }
 
 // ---------- Arranque ----------
+let mascotGreeted = false;
+
 function start() {
   reminders.setAlarmHandler((title, body) => toast(`${title} — ${body}`, { emoji: '🔔' }));
+  // La mascota habla cuando se dispara un recordatorio de comida o agua.
+  reminders.setReminderHandler((type, title, body) => {
+    mascot.mascotSay(body, { emoji: type === 'water' ? '💧' : '🍽️' });
+  });
   if (!store.getProfile()) {
+    mascot.hideMascot();
     renderOnboarding();
   } else {
     renderShell();
     reminders.scheduleReminders();
+  }
+}
+
+// Frase de bienvenida de la mascota (una vez por sesión).
+function mascotGreet() {
+  if (mascotGreeted) return;
+  mascotGreeted = true;
+  const s = store.getSettings();
+  setTimeout(() => mascot.mascotSay(`¡Hola! Soy ${s.mascotName}. Tócame cuando quieras 💪`, { emoji: '👋' }), 1200);
+}
+
+// Consejo/ánimo al tocar la mascota.
+function mascotTip() {
+  const s = store.getSettings();
+  const log = store.getLog();
+  const glasses = Math.round(log.water / s.glassMl);
+  if (log.water < waterGoalMl()) {
+    mascot.mascotSay(`Llevas ${glasses}/${s.waterGoalGlasses} vasos de agua. ¿Un sorbito más?`, { emoji: '💧' });
+  } else {
+    mascot.mascotSay(randomMotivation());
   }
 }
 
@@ -65,6 +96,7 @@ function start() {
 // ====================================================================
 function renderOnboarding() {
   nav.style.display = 'none';
+  mascot.hideMascot();
   clear(app);
 
   const form = { sex: 'h', age: 30, height: 170, weight: 80, goal: 70, activity: 'ligero', pace: 0.5 };
@@ -135,6 +167,9 @@ const TABS = [
 
 function renderShell() {
   nav.style.display = 'flex';
+  const s = store.getSettings();
+  mascot.mountMascot({ name: s.mascotName, emoji: s.mascotEmoji, onTap: mascotTip });
+  mascotGreet();
   clear(nav);
   TABS.forEach((t) => {
     nav.appendChild(h('button', {
@@ -298,6 +333,8 @@ function renderEat() {
 
   // Botón añadir
   view.appendChild(h('button', { class: 'btn primary', onClick: () => openAddFood() }, '＋ Agregar comida'));
+  // Recetas de desayuno saludables (productos chilenos)
+  view.appendChild(h('button', { class: 'btn', onClick: () => openRecipes() }, '🍳 Recetas de desayuno saludables'));
 
   // Lista de comidas registradas hoy, agrupadas por momento
   const s = store.getSettings();
@@ -422,6 +459,44 @@ function addFood({ mealId, name, kcal, portion }) {
   renderTab();
 }
 
+// ---- Recetas de desayuno ----
+function openRecipes() {
+  const list = h('div', { class: 'recipe-list' }, RECIPES.map((r) =>
+    h('button', { class: 'recipe-card', onClick: () => openRecipe(r) }, [
+      h('span', { class: 'recipe-emoji' }, r.emoji),
+      h('div', { class: 'recipe-info' }, [
+        h('div', { class: 'recipe-name' }, r.name),
+        h('div', { class: 'muted tiny' }, `⏱️ ${r.minutes} min · ${r.kcal} kcal`),
+      ]),
+      h('span', { class: 'recipe-chevron' }, '›'),
+    ])));
+  modal('🍳 Desayunos saludables', list);
+}
+
+function openRecipe(r) {
+  const content = h('div', { class: 'recipe-detail' }, [
+    h('div', { class: 'recipe-detail-head' }, [
+      h('span', { class: 'recipe-emoji-big' }, r.emoji),
+      h('div', {}, [
+        h('div', { class: 'bold' }, r.name),
+        h('div', { class: 'muted tiny' }, `⏱️ ${r.minutes} min · ${r.kcal} kcal`),
+      ]),
+    ]),
+    h('div', { class: 'recipe-section-title' }, 'Ingredientes'),
+    h('ul', { class: 'recipe-ul' }, r.ingredients.map((i) => h('li', {}, i))),
+    h('div', { class: 'recipe-section-title' }, 'Preparación'),
+    h('ol', { class: 'recipe-ol' }, r.steps.map((s) => h('li', {}, s))),
+  ]);
+  const overlay = modal(r.name, content, [
+    h('button', { class: 'btn', onClick: () => overlay.remove() }, 'Cerrar'),
+    h('button', { class: 'btn primary', onClick: () => {
+      addFood({ mealId: 'desayuno', name: r.name, kcal: r.kcal, portion: '1 porción' });
+      overlay.remove();
+      mascot.mascotSay('¡Rico y saludable! Desayuno registrado 🍳', { emoji: '😋' });
+    } }, 'Registrar en desayuno') ,
+  ]);
+}
+
 // ====================================================================
 // AGUA
 // ====================================================================
@@ -490,6 +565,7 @@ function handleWaterGain(before, after) {
   award(game.POINTS.waterGlass, '¡Bien hidratado!', '💧');
   if (before < goal && after >= goal) {
     award(game.POINTS.waterGoal, '¡Meta de agua cumplida!', '🌊');
+    mascot.mascotSay('¡Lo lograste! Meta de agua completa 🌊', { emoji: '🎉' });
     game.unlock('water_goal') && setTimeout(() => celebrate(game.BADGES.find((b) => b.id === 'water_goal')), 300);
   }
   game.unlock('first_water') && setTimeout(() => celebrate(game.BADGES.find((b) => b.id === 'first_water')), 300);
@@ -748,6 +824,29 @@ function renderSettings() {
       renderTab();
     } }, 'Activar notificaciones'),
     h('div', { class: 'ios-tip' }, '📱 En iPhone: abre esta web en Safari, toca Compartir → "Agregar a inicio". Luego ábrela desde el ícono para recibir avisos.'),
+  ]));
+
+  // Mascota
+  const animalRow = h('div', { class: 'animal-grid' }, MASCOT_ANIMALS.map((emoji) =>
+    h('button', { class: 'animal-chip' + (emoji === s.mascotEmoji ? ' selected' : ''), onClick: () => {
+      store.setSettings({ mascotEmoji: emoji });
+      mascot.setMascot(store.getSettings().mascotName, emoji);
+      mascot.mascotSay('¡Me gusta mi nuevo look! 😄');
+      renderTab();
+    } }, emoji)));
+  view.appendChild(h('div', { class: 'card' }, [
+    h('div', { class: 'card-title' }, '🦊 Mi mascota'),
+    h('div', { class: 'setting-row' }, [
+      h('span', {}, 'Nombre'),
+      h('input', { class: 'mini-input wide', type: 'text', value: s.mascotName, onchange: (e) => {
+        const name = e.target.value.trim() || 'Pancho';
+        store.setSettings({ mascotName: name });
+        mascot.setMascot(name, store.getSettings().mascotEmoji);
+      } }),
+    ]),
+    h('label', { class: 'fld-label' }, 'Elige tu animalito'),
+    animalRow,
+    h('div', { class: 'muted tiny' }, 'Toca tu mascota en la pantalla para recibir ánimo. Te avisará cuando sea hora de tomar agua o comer.'),
   ]));
 
   // Metas
