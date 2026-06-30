@@ -1,6 +1,6 @@
 // sw.js — Service worker: cache offline del shell + notificaciones.
 
-const CACHE = 'mireto-v2';
+const CACHE = 'mireto-v3';
 const ASSETS = [
   './',
   './index.html',

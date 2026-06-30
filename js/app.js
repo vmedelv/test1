@@ -219,11 +219,14 @@ function renderHome() {
 
   const view = h('div', { class: 'view' });
 
-  // Cabecera con saludo + ajustes
+  // Cabecera con avatar + saludo + ajustes
   view.appendChild(h('div', { class: 'home-head' }, [
-    h('div', {}, [
-      h('div', { class: 'greeting' }, saludo()),
-      h('div', { class: 'muted' }, randomMotivation()),
+    h('div', { class: 'home-id' }, [
+      h('div', { class: 'avatar' }, store.getSettings().mascotEmoji),
+      h('div', {}, [
+        h('div', { class: 'greeting' }, saludo()),
+        h('div', { class: 'muted' }, randomMotivation()),
+      ]),
     ]),
     h('button', { class: 'icon-btn', onClick: () => { currentTab = 'ajustes'; renderTab(); } }, '⚙️'),
   ]));
