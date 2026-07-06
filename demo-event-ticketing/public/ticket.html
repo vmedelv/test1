@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mi ticket — Demo Ticketing</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">🎟️ TicketingCL <span class="badge">demo</span></a>
+  </header>
+  <main class="narrow" id="app">
+    <p class="spinner">Cargando ticket…</p>
+  </main>
+  <script src="/common.js"></script>
+  <script>
+    const ticketId = pathSegment(1);
+
+    const statusBadge = {
+      valid: '<span class="badge ok">Valido</span>',
+      used: '<span class="badge warn">Ya utilizado</span>',
+      cancelled: '<span class="badge danger">Cancelado</span>',
+    };
+
+    async function load() {
+      const app = document.getElementById('app');
+      const { ticket, event } = await api('GET', `/api/tickets/${ticketId}`);
+
+      app.innerHTML = `
+        <div class="card" style="text-align:center">
+          <div class="badge" style="background:${event.coverColor}; color:#fff">${escapeHtml(event.title)}</div>
+          <h1 style="margin-top:14px">${escapeHtml(ticket.ticketTypeName)}</h1>
+          <p class="lead">${fmtDateTime(event.startsAt)}${event.venueName ? ' · ' + escapeHtml(event.venueName) : ''}</p>
+          <img src="${ticket.qrDataUrl}" width="220" height="220" alt="Codigo QR del ticket" style="margin:14px 0" />
+          <div class="code-chip">${escapeHtml(ticket.code)}</div>
+          <p style="margin-top:14px">${statusBadge[ticket.status] || ticket.status}</p>
+          <p class="lead" style="font-size:0.85rem">Asistente: ${escapeHtml(ticket.attendeeName)}</p>
+          ${ticket.checkedInAt ? `<p class="lead" style="font-size:0.8rem">Check-in: ${fmtDateTime(ticket.checkedInAt)}</p>` : ''}
+        </div>
+        <p class="footer-note">Presenta este codigo en el ingreso del evento. El staff puede validarlo escribiendolo en el panel de check-in.</p>
+      `;
+    }
+
+    load().catch((err) => notice(document.getElementById('app'), 'danger', err.message));
+  </script>
+</body>
+</html>
