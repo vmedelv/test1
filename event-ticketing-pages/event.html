@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Evento — Demo Ticketing</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html">🎟️ TicketingCL <span class="badge">demo estatico</span></a>
+    <nav><a href="admin.html">Panel organizador</a></nav>
+  </header>
+  <main class="narrow" id="app">
+    <p class="spinner">Cargando evento…</p>
+  </main>
+  <script src="lib/store.js"></script>
+  <script src="lib/qr.js"></script>
+  <script src="lib/domain.js"></script>
+  <script src="lib/seed.js"></script>
+  <script src="common.js"></script>
+  <script>
+    const slug = qparam('slug');
+
+    function renderQtyRows(event) {
+      return event.ticketTypes.map((tt) => `
+        <div class="qty-row">
+          <div>
+            <div class="name">${escapeHtml(tt.name)}</div>
+            <div class="price">${money(tt.price)} · ${tt.available} disponibles</div>
+          </div>
+          <input type="number" min="0" max="${tt.available}" value="0" data-tt="${tt.id}" ${tt.available === 0 ? 'disabled' : ''} />
+        </div>
+      `).join('');
+    }
+
+    function load() {
+      const app = document.getElementById('app');
+      const event = Domain.publicEventView(Domain.getEventBySlug(slug));
+      document.title = `${event.title} — Demo Ticketing`;
+
+      if (event.status !== 'published') {
+        app.innerHTML = `<div class="notice warn">Este evento aun no esta publicado.</div>`;
+        return;
+      }
+
+      app.innerHTML = `
+        <div class="cover" style="background:${event.coverColor}; height:120px; border-radius:14px; margin-bottom:16px"></div>
+        <h1>${escapeHtml(event.title)}</h1>
+        <p class="lead">${fmtDateTime(event.startsAt)} · ${eventTypeLabel(event.type)}${event.venueName ? ' · ' + escapeHtml(event.venueName) : ''}</p>
+        <p>${escapeHtml(event.description)}</p>
+
+        <div class="card">
+          <h2 style="margin-top:0">Entradas</h2>
+          <div id="qty-rows">${renderQtyRows(event)}</div>
+        </div>
+
+        <div class="card">
+          <h2 style="margin-top:0">Tus datos</h2>
+          <form id="checkout-form">
+            <label>Nombre completo</label>
+            <input name="buyerName" required />
+            <label>Correo electronico</label>
+            <input name="buyerEmail" type="email" required />
+            <label>Codigo promocional (opcional)</label>
+            <input name="promoCode" placeholder="Ej: EARLYBIRD" />
+            <div style="margin-top:16px">
+              <button type="submit">Continuar al pago</button>
+            </div>
+          </form>
+        </div>
+        <div id="checkout-notice"></div>
+      `;
+
+      document.getElementById('checkout-form').addEventListener('submit', (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(ev.target);
+        const items = [...document.querySelectorAll('#qty-rows input[data-tt]')]
+          .map((input) => ({ ticketTypeId: input.dataset.tt, qty: Number(input.value) }))
+          .filter((i) => i.qty > 0);
+        const noticeEl = document.getElementById('checkout-notice');
+        if (!items.length) {
+          notice(noticeEl, 'warn', 'Selecciona al menos una entrada.');
+          return;
+        }
+        const order = tryRun(() => Domain.checkout(slug, {
+          buyerName: fd.get('buyerName'),
+          buyerEmail: fd.get('buyerEmail'),
+          promoCode: fd.get('promoCode') || undefined,
+          items,
+        }), (msg) => notice(noticeEl, 'danger', msg));
+        if (order) location.href = `pay.html?order=${order.id}`;
+      });
+    }
+
+    tryRun(load, (msg) => notice(document.getElementById('app'), 'danger', msg));
+  </script>
+</body>
+</html>

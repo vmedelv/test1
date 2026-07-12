@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Eventos — Demo Ticketing</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">🎟️ TicketingCL <span class="badge">demo</span></a>
+    <nav>
+      <a href="/admin">Panel organizador</a>
+      <a href="/checkin">Check-in</a>
+    </nav>
+  </header>
+  <main>
+    <h1>Eventos disponibles</h1>
+    <p class="lead">Demo funcional de la plataforma de gestion de eventos y venta de tickets (MVP, Chile). Los pagos usan una pasarela simulada tipo Webpay Plus / Flow.</p>
+    <div id="list" class="grid"><p class="spinner">Cargando eventos…</p></div>
+  </main>
+  <script src="/common.js"></script>
+  <script>
+    async function load() {
+      const list = document.getElementById('list');
+      const events = (await api('GET', '/api/events')).filter((e) => e.status === 'published');
+      if (!events.length) {
+        list.innerHTML = '<p>Todavia no hay eventos publicados. Crea uno desde el <a href="/admin">panel del organizador</a>.</p>';
+        return;
+      }
+      list.innerHTML = events.map((e) => `
+        <a class="event-card card" href="/e/${e.slug}">
+          <div class="cover" style="background:${e.coverColor}"></div>
+          <h3>${escapeHtml(e.title)}</h3>
+          <div class="meta">${fmtDateTime(e.startsAt)}</div>
+          <div class="meta">${eventTypeLabel(e.type)}${e.venueName ? ' · ' + escapeHtml(e.venueName) : ''}</div>
+        </a>
+      `).join('');
+    }
+    load().catch((err) => notice(document.getElementById('list'), 'danger', err.message));
+  </script>
+</body>
+</html>

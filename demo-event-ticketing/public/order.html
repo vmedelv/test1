@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Confirmacion de compra — Demo Ticketing</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">🎟️ TicketingCL <span class="badge">demo</span></a>
+  </header>
+  <main class="narrow" id="app">
+    <p class="spinner">Cargando…</p>
+  </main>
+  <script src="/common.js"></script>
+  <script>
+    const orderId = pathSegment(1);
+
+    async function load() {
+      const app = document.getElementById('app');
+      const { order, event, tickets } = await api('GET', `/api/orders/${orderId}`);
+
+      if (order.status !== 'paid') {
+        app.innerHTML = `<div class="notice warn">Esta orden esta en estado "${order.status}".</div>`;
+        return;
+      }
+
+      app.innerHTML = `
+        <div class="notice ok">Pago confirmado via ${order.gateway === 'flow' ? 'Flow' : 'Webpay Plus'} (simulado). Se genero ${tickets.length} entrada(s).</div>
+        <h1>${escapeHtml(event.title)}</h1>
+        <p class="lead">${fmtDateTime(event.startsAt)}${event.venueName ? ' · ' + escapeHtml(event.venueName) : ''}</p>
+
+        ${tickets.map((t) => `
+          <div class="card">
+            <div class="ticket-visual">
+              <img src="${t.qrDataUrl}" width="90" height="90" alt="Codigo de acceso" />
+              <div>
+                <div><strong>${escapeHtml(t.ticketTypeName)}</strong></div>
+                <div class="code-chip">${escapeHtml(t.code)}</div>
+                <div style="margin-top:8px"><a href="/tickets/${t.id}">Ver ticket completo →</a></div>
+              </div>
+            </div>
+          </div>
+        `).join('')}
+
+        <p class="footer-note">Comprador: ${escapeHtml(order.buyerName)} · ${escapeHtml(order.buyerEmail)} · Total pagado: ${money(order.total)}</p>
+      `;
+    }
+
+    load().catch((err) => notice(document.getElementById('app'), 'danger', err.message));
+  </script>
+</body>
+</html>
