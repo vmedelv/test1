@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pago — Demo Ticketing</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html">🎟️ TicketingCL <span class="badge">demo estatico</span></a>
+  </header>
+  <main class="narrow" id="app">
+    <p class="spinner">Cargando orden…</p>
+  </main>
+  <script src="lib/store.js"></script>
+  <script src="lib/qr.js"></script>
+  <script src="lib/domain.js"></script>
+  <script src="lib/seed.js"></script>
+  <script src="common.js"></script>
+  <script>
+    const orderId = qparam('order');
+
+    function summaryHtml(order, event) {
+      return `
+        <h1>Confirmar y pagar</h1>
+        <p class="lead">${escapeHtml(event.title)} · ${fmtDateTime(event.startsAt)}</p>
+        <div class="card">
+          <table>
+            <tbody>
+              ${order.items.map((i) => `<tr><td>${i.qty} × ${escapeHtml(i.name)}</td><td style="text-align:right">${money(i.qty * i.unitPrice)}</td></tr>`).join('')}
+              ${order.discount ? `<tr><td>Descuento (${escapeHtml(order.promoCode)})</td><td style="text-align:right">-${money(order.discount)}</td></tr>` : ''}
+              <tr><td><strong>Total</strong></td><td style="text-align:right"><strong>${money(order.total)}</strong></td></tr>
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    function gatewayChooserHtml() {
+      return `
+        <h2>Elige tu medio de pago</h2>
+        <p class="lead" style="font-size:0.85rem">
+          Pasarelas simuladas para la demo. En produccion, este paso redirige de verdad al
+          dominio de Transbank o de Flow; el comercio nunca recibe el numero de tarjeta.
+        </p>
+        <div class="gateway-btns">
+          <button type="button" class="gateway-btn" data-gw="webpay_plus">
+            <div class="name">Webpay Plus</div>
+            <div class="sub">Tarjetas de credito y debito (Transbank)</div>
+          </button>
+          <button type="button" class="gateway-btn" data-gw="flow">
+            <div class="name">Flow</div>
+            <div class="sub">Transferencia, Mercado Pago, Onepay, etc.</div>
+          </button>
+        </div>
+        <div id="bank-screen"></div>
+        <div style="margin-top:16px"><button type="button" class="secondary" id="cancel-btn">Cancelar compra</button></div>
+      `;
+    }
+
+    function bankScreenHtml(gw) {
+      const label = gw === 'flow' ? 'Flow' : 'Webpay Plus';
+      return `
+        <div class="card" style="margin-top:14px; border-color: var(--accent)">
+          <strong>${label} (simulado)</strong>
+          <p class="lead" style="font-size:0.85rem">Esta pantalla representa el dominio del medio de pago, fuera del sitio del organizador.</p>
+          <label>Numero de tarjeta / cuenta (no se procesa realmente)</label>
+          <input value="4051 8842 xxxx xxxx" disabled />
+          <div style="margin-top:14px" class="row">
+            <button type="button" id="confirm-pay">Pagar ahora</button>
+            <button type="button" class="secondary" id="abort-pay">Volver</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function load() {
+      const app = document.getElementById('app');
+      const order = Domain.getOrder(orderId);
+      const event = Domain.publicEventView(Domain.getEventById(order.eventId));
+
+      if (order.status === 'paid') {
+        location.href = `order.html?order=${order.id}`;
+        return;
+      }
+      if (order.status !== 'pending') {
+        app.innerHTML = `<div class="notice warn">Esta orden esta en estado "${order.status}" y ya no se puede pagar.</div><p><a href="event.html?slug=${event.slug}">Volver al evento</a></p>`;
+        return;
+      }
+
+      app.innerHTML = summaryHtml(order, event) + gatewayChooserHtml();
+
+      document.querySelectorAll('[data-gw]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          document.getElementById('bank-screen').innerHTML = bankScreenHtml(btn.dataset.gw);
+          document.getElementById('confirm-pay').addEventListener('click', () => {
+            const ok = tryRun(() => Domain.confirmOrder(orderId, btn.dataset.gw), (msg) => notice(document.getElementById('bank-screen'), 'danger', msg));
+            if (ok) location.href = `order.html?order=${orderId}`;
+          });
+          document.getElementById('abort-pay').addEventListener('click', () => {
+            document.getElementById('bank-screen').innerHTML = '';
+          });
+        });
+      });
+
+      document.getElementById('cancel-btn').addEventListener('click', () => {
+        tryRun(() => Domain.cancelOrder(orderId), (msg) => alert(msg));
+        app.innerHTML = `<div class="notice warn">Compra cancelada. El stock reservado fue liberado.</div><p><a href="event.html?slug=${event.slug}">Volver al evento</a></p>`;
+      });
+    }
+
+    tryRun(load, (msg) => notice(document.getElementById('app'), 'danger', msg));
+  </script>
+</body>
+</html>

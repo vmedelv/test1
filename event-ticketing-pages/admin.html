@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Panel organizador — Demo Ticketing</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html">🎟️ TicketingCL <span class="badge">demo estatico</span></a>
+    <nav>
+      <a href="index.html">Sitio publico</a>
+      <a href="checkin.html">Check-in</a>
+    </nav>
+  </header>
+  <main>
+    <h1>Panel del organizador</h1>
+    <p class="lead">Crea un evento, define tipos de entrada y sigue las ventas en tiempo real (datos guardados en este navegador).</p>
+
+    <div class="card">
+      <h2 style="margin-top:0">Nuevo evento</h2>
+      <form id="event-form">
+        <label>Titulo</label>
+        <input name="title" required placeholder="Ej: Conferencia DevChile 2026" />
+
+        <label>Descripcion</label>
+        <textarea name="description" placeholder="Breve descripcion publica del evento"></textarea>
+
+        <div class="row">
+          <div>
+            <label>Tipo</label>
+            <select name="type">
+              <option value="in_person">Presencial</option>
+              <option value="online">Online</option>
+              <option value="hybrid">Hibrido</option>
+            </select>
+          </div>
+          <div>
+            <label>Sede / lugar</label>
+            <input name="venueName" placeholder="Ej: Centro de Eventos Vino Bello" />
+          </div>
+        </div>
+
+        <label>Fecha y hora (America/Santiago)</label>
+        <input name="startsAt" type="datetime-local" required />
+
+        <h2>Tipos de entrada</h2>
+        <div id="ticket-types"></div>
+        <button type="button" class="secondary" id="add-ticket-type">+ Agregar tipo de entrada</button>
+
+        <h2>Codigo promocional (opcional)</h2>
+        <div class="row">
+          <div>
+            <label>Codigo</label>
+            <input name="promoCode" placeholder="Ej: EARLYBIRD" />
+          </div>
+          <div>
+            <label>% de descuento</label>
+            <input name="promoPercent" type="number" min="0" max="100" placeholder="15" />
+          </div>
+          <div>
+            <label>Usos maximos</label>
+            <input name="promoMax" type="number" min="1" placeholder="50" />
+          </div>
+        </div>
+
+        <div style="margin-top:16px">
+          <button type="submit">Crear evento</button>
+        </div>
+      </form>
+      <div id="form-notice"></div>
+    </div>
+
+    <h2>Mis eventos</h2>
+    <div id="events"><p class="spinner">Cargando…</p></div>
+
+    <div id="stats-panel"></div>
+  </main>
+  <script src="lib/store.js"></script>
+  <script src="lib/qr.js"></script>
+  <script src="lib/domain.js"></script>
+  <script src="lib/seed.js"></script>
+  <script src="common.js"></script>
+  <script>
+    const ticketTypesEl = document.getElementById('ticket-types');
+
+    function addTicketTypeRow(values = {}) {
+      const row = document.createElement('div');
+      row.className = 'ticket-type-row';
+      row.innerHTML = `
+        <input placeholder="Nombre (ej: General)" class="tt-name" value="${escapeHtml(values.name || '')}" required />
+        <input placeholder="Precio CLP" type="number" min="0" class="tt-price" value="${values.price ?? ''}" required />
+        <input placeholder="Stock" type="number" min="0" class="tt-stock" value="${values.stock ?? ''}" required />
+        <button type="button" class="secondary remove-row">✕</button>
+      `;
+      row.querySelector('.remove-row').addEventListener('click', () => row.remove());
+      ticketTypesEl.appendChild(row);
+    }
+    addTicketTypeRow({ name: 'General', price: 15000, stock: 100 });
+    addTicketTypeRow({ name: 'VIP', price: 35000, stock: 20 });
+    document.getElementById('add-ticket-type').addEventListener('click', () => addTicketTypeRow());
+
+    document.getElementById('event-form').addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      const fd = new FormData(ev.target);
+      const ticketTypes = [...ticketTypesEl.querySelectorAll('.ticket-type-row')].map((row) => ({
+        name: row.querySelector('.tt-name').value,
+        price: Number(row.querySelector('.tt-price').value),
+        stock: Number(row.querySelector('.tt-stock').value),
+      }));
+      const promoCodes = [];
+      if (fd.get('promoCode')) {
+        promoCodes.push({
+          code: fd.get('promoCode'),
+          percentOff: Number(fd.get('promoPercent') || 0),
+          maxUses: fd.get('promoMax') ? Number(fd.get('promoMax')) : null,
+        });
+      }
+      const startsAtLocal = fd.get('startsAt');
+      const payload = {
+        title: fd.get('title'),
+        description: fd.get('description'),
+        type: fd.get('type'),
+        venueName: fd.get('venueName'),
+        startsAt: startsAtLocal ? new Date(startsAtLocal).toISOString() : null,
+        ticketTypes,
+        promoCodes,
+      };
+      const noticeEl = document.getElementById('form-notice');
+      const created = tryRun(() => Domain.createEvent(payload), (msg) => notice(noticeEl, 'danger', msg));
+      if (created) {
+        notice(noticeEl, 'ok', 'Evento creado como borrador. Publicalo desde la lista de abajo para que aparezca en el sitio publico.');
+        ev.target.reset();
+        loadEvents();
+      }
+    });
+
+    function loadEvents() {
+      const container = document.getElementById('events');
+      const events = Domain.listEvents();
+      if (!events.length) {
+        container.innerHTML = '<p>Aun no has creado eventos.</p>';
+        return;
+      }
+      container.innerHTML = events.map((e) => `
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap">
+            <div>
+              <strong>${escapeHtml(e.title)}</strong>
+              <span class="badge ${e.status === 'published' ? 'ok' : 'warn'}">${e.status}</span>
+              <div class="meta" style="color:var(--muted); font-size:0.85rem">${fmtDateTime(e.startsAt)} · event.html?slug=${e.slug}</div>
+            </div>
+            <div class="row" style="flex:0 0 auto">
+              ${e.status === 'draft' ? `<button data-publish="${e.id}">Publicar</button>` : `<a href="event.html?slug=${e.slug}"><button class="secondary" type="button">Ver pagina</button></a>`}
+              <button class="secondary" data-stats="${e.id}">Ver estadisticas</button>
+            </div>
+          </div>
+        </div>
+      `).join('');
+
+      container.querySelectorAll('[data-publish]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          tryRun(() => Domain.publishEvent(btn.dataset.publish), (msg) => alert(msg));
+          loadEvents();
+        });
+      });
+      container.querySelectorAll('[data-stats]').forEach((btn) => {
+        btn.addEventListener('click', () => loadStats(btn.dataset.stats));
+      });
+    }
+
+    function loadStats(eventId) {
+      const panel = document.getElementById('stats-panel');
+      const stats = tryRun(() => Domain.eventStats(eventId), (msg) => notice(panel, 'danger', msg));
+      if (!stats) return;
+      panel.innerHTML = `
+        <h2>Estadisticas — ${escapeHtml(stats.event.title)}</h2>
+        <div class="kpis">
+          <div class="kpi"><div class="num">${money(stats.totals.revenue)}</div><div class="label">Ingresos (pagado)</div></div>
+          <div class="kpi"><div class="num">${stats.totals.ticketsSold}</div><div class="label">Entradas vendidas</div></div>
+          <div class="kpi"><div class="num">${stats.totals.ticketsCheckedIn}</div><div class="label">Check-ins</div></div>
+          <div class="kpi"><div class="num">${stats.totals.attendanceRate}%</div><div class="label">Tasa de asistencia</div></div>
+          <div class="kpi"><div class="num">${stats.totals.ordersPaid}</div><div class="label">Ordenes pagadas</div></div>
+          <div class="kpi"><div class="num">${stats.totals.ordersPending}</div><div class="label">Ordenes pendientes</div></div>
+        </div>
+        <div class="card">
+          <table>
+            <thead><tr><th>Tipo de entrada</th><th>Precio</th><th>Vendidas</th><th>Reservadas</th><th>Disponibles</th></tr></thead>
+            <tbody>
+              ${stats.byTicketType.map((tt) => `
+                <tr><td>${escapeHtml(tt.name)}</td><td>${money(tt.price)}</td><td>${tt.sold}</td><td>${tt.reserved}</td><td>${tt.available}</td></tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
+          <strong>Ordenes recientes</strong>
+          <table>
+            <thead><tr><th>Comprador</th><th>Estado</th><th>Total</th><th>Fecha</th></tr></thead>
+            <tbody>
+              ${stats.recentOrders.map((o) => `
+                <tr>
+                  <td>${escapeHtml(o.buyerName)}<br><span style="color:var(--muted);font-size:0.8rem">${escapeHtml(o.buyerEmail)}</span></td>
+                  <td><span class="badge ${o.status === 'paid' ? 'ok' : o.status === 'pending' ? 'warn' : 'danger'}">${o.status}</span></td>
+                  <td>${money(o.total)}</td>
+                  <td>${fmtDateTime(o.createdAt)}</td>
+                </tr>
+              `).join('') || '<tr><td colspan="4">Sin ordenes todavia.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    tryRun(loadEvents, (msg) => notice(document.getElementById('events'), 'danger', msg));
+  </script>
+</body>
+</html>

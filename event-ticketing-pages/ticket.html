@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mi ticket — Demo Ticketing</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html">🎟️ TicketingCL <span class="badge">demo estatico</span></a>
+  </header>
+  <main class="narrow" id="app">
+    <p class="spinner">Cargando ticket…</p>
+  </main>
+  <script src="lib/store.js"></script>
+  <script src="lib/qr.js"></script>
+  <script src="lib/domain.js"></script>
+  <script src="lib/seed.js"></script>
+  <script src="common.js"></script>
+  <script>
+    const ticketId = qparam('id');
+
+    const statusBadge = {
+      valid: '<span class="badge ok">Valido</span>',
+      used: '<span class="badge warn">Ya utilizado</span>',
+      cancelled: '<span class="badge danger">Cancelado</span>',
+    };
+
+    function load() {
+      const app = document.getElementById('app');
+      const ticket = Domain.getTicket(ticketId);
+      const event = Domain.publicEventView(Domain.getEventById(ticket.eventId));
+
+      app.innerHTML = `
+        <div class="card" style="text-align:center">
+          <div class="badge" style="background:${event.coverColor}; color:#fff">${escapeHtml(event.title)}</div>
+          <h1 style="margin-top:14px">${escapeHtml(ticket.ticketTypeName)}</h1>
+          <p class="lead">${fmtDateTime(event.startsAt)}${event.venueName ? ' · ' + escapeHtml(event.venueName) : ''}</p>
+          <img src="${QR.dataUrlFor(ticket.code)}" width="220" height="220" alt="Codigo QR del ticket" style="margin:14px 0" />
+          <div class="code-chip">${escapeHtml(ticket.code)}</div>
+          <p style="margin-top:14px">${statusBadge[ticket.status] || ticket.status}</p>
+          <p class="lead" style="font-size:0.85rem">Asistente: ${escapeHtml(ticket.attendeeName)}</p>
+          ${ticket.checkedInAt ? `<p class="lead" style="font-size:0.8rem">Check-in: ${fmtDateTime(ticket.checkedInAt)}</p>` : ''}
+        </div>
+        <p class="footer-note">Presenta este codigo en el ingreso del evento. El staff puede validarlo escribiendolo en el panel de check-in.</p>
+      `;
+    }
+
+    tryRun(load, (msg) => notice(document.getElementById('app'), 'danger', msg));
+  </script>
+</body>
+</html>

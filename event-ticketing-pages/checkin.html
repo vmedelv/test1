@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Check-in — Demo Ticketing</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html">🎟️ TicketingCL <span class="badge">demo estatico</span></a>
+    <nav><a href="admin.html">Panel organizador</a></nav>
+  </header>
+  <main class="narrow">
+    <h1>Control de acceso</h1>
+    <p class="lead">Ingresa o pega el codigo del ticket (equivalente a escanear el QR en el ingreso). Requiere estar en el mismo navegador donde se compro/genero el ticket.</p>
+
+    <div class="card">
+      <label>Evento</label>
+      <select id="event-select"></select>
+
+      <label>Codigo del ticket</label>
+      <form id="scan-form">
+        <input id="code-input" autocomplete="off" placeholder="Ej: AB12-CD34-EF" autofocus />
+        <div style="margin-top:12px">
+          <button type="submit">Validar / Check-in</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="result"></div>
+
+    <div class="card">
+      <div id="live-stats" class="kpis"></div>
+    </div>
+  </main>
+  <script src="lib/store.js"></script>
+  <script src="lib/qr.js"></script>
+  <script src="lib/domain.js"></script>
+  <script src="lib/seed.js"></script>
+  <script src="common.js"></script>
+  <script>
+    const select = document.getElementById('event-select');
+    const resultEl = document.getElementById('result');
+    const statsEl = document.getElementById('live-stats');
+    let events = [];
+
+    function renderResult(outcome, ticket) {
+      const map = {
+        valid: { kind: 'ok', title: '✔ Acceso valido', sub: ticket ? `${ticket.ticketTypeName} · ${ticket.attendeeName}` : '' },
+        already_used: { kind: 'warn', title: '⚠ Ticket ya utilizado', sub: ticket ? `Check-in previo: ${fmtDateTime(ticket.checkedInAt)}` : '' },
+        wrong_event: { kind: 'danger', title: '✕ Este ticket es de otro evento', sub: '' },
+        cancelled: { kind: 'danger', title: '✕ Ticket cancelado / reembolsado', sub: '' },
+        not_found: { kind: 'danger', title: '✕ Codigo no encontrado', sub: 'Revisa que este bien escrito.' },
+      };
+      const m = map[outcome] || { kind: 'danger', title: 'Error desconocido', sub: '' };
+      resultEl.innerHTML = `
+        <div class="scan-result notice ${m.kind}">
+          <div>${m.title}</div>
+          ${m.sub ? `<div class="sub">${escapeHtml(m.sub)}</div>` : ''}
+        </div>
+      `;
+    }
+
+    function loadEvents() {
+      events = Domain.listEvents().filter((e) => e.status === 'published').map(Domain.publicEventView);
+      select.innerHTML = events.map((e) => `<option value="${e.slug}">${escapeHtml(e.title)}</option>`).join('') || '<option value="">Sin eventos publicados</option>';
+      refreshStats();
+    }
+
+    function refreshStats() {
+      const slug = select.value;
+      const event = events.find((e) => e.slug === slug);
+      if (!event) { statsEl.innerHTML = ''; return; }
+      const stats = Domain.eventStats(event.id);
+      statsEl.innerHTML = `
+        <div class="kpi"><div class="num">${stats.totals.ticketsSold}</div><div class="label">Entradas vendidas</div></div>
+        <div class="kpi"><div class="num">${stats.totals.ticketsCheckedIn}</div><div class="label">Check-ins hechos</div></div>
+        <div class="kpi"><div class="num">${stats.totals.attendanceRate}%</div><div class="label">Aforo ingresado</div></div>
+      `;
+    }
+
+    select.addEventListener('change', refreshStats);
+
+    document.getElementById('scan-form').addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      const input = document.getElementById('code-input');
+      const code = input.value.trim();
+      if (!code) return;
+      const res = tryRun(() => Domain.scanCheckin({ code, eventSlug: select.value }), (msg) => notice(resultEl, 'danger', msg));
+      if (res) renderResult(res.outcome, res.ticket);
+      input.value = '';
+      input.focus();
+      refreshStats();
+    });
+
+    tryRun(loadEvents, (msg) => notice(resultEl, 'danger', msg));
+  </script>
+</body>
+</html>

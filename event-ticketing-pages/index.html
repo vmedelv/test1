@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Eventos — Demo Ticketing (GitHub Pages)</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html">🎟️ TicketingCL <span class="badge">demo estatico</span></a>
+    <nav>
+      <a href="admin.html">Panel organizador</a>
+      <a href="checkin.html">Check-in</a>
+    </nav>
+  </header>
+  <main>
+    <h1>Eventos disponibles</h1>
+    <p class="lead">Version 100% estatica (GitHub Pages) del demo de la plataforma de ticketing. Corre entera en tu navegador: los datos se guardan en <code>localStorage</code>, no hay servidor ni base de datos compartida. Ver detalles al final de la pagina.</p>
+    <div id="list" class="grid"><p class="spinner">Cargando eventos…</p></div>
+
+    <p class="footer-note">
+      Esta pagina no tiene backend: cada visitante ve solo los eventos/compras que
+      el creo en su propio navegador. Para un demo con backend real (Node, sin
+      dependencias externas) ver <code>demo-event-ticketing/</code> en el repositorio.
+    </p>
+  </main>
+  <script src="lib/store.js"></script>
+  <script src="lib/qr.js"></script>
+  <script src="lib/domain.js"></script>
+  <script src="lib/seed.js"></script>
+  <script src="common.js"></script>
+  <script>
+    function load() {
+      const list = document.getElementById('list');
+      const events = Domain.listEvents().filter((e) => e.status === 'published');
+      if (!events.length) {
+        list.innerHTML = '<p>Todavia no hay eventos publicados en este navegador. Crea uno desde el <a href="admin.html">panel del organizador</a>.</p>';
+        return;
+      }
+      list.innerHTML = events.map((e) => `
+        <a class="event-card card" href="event.html?slug=${encodeURIComponent(e.slug)}">
+          <div class="cover" style="background:${e.coverColor}"></div>
+          <h3>${escapeHtml(e.title)}</h3>
+          <div class="meta">${fmtDateTime(e.startsAt)}</div>
+          <div class="meta">${eventTypeLabel(e.type)}${e.venueName ? ' · ' + escapeHtml(e.venueName) : ''}</div>
+        </a>
+      `).join('');
+    }
+    tryRun(load, (msg) => notice(document.getElementById('list'), 'danger', msg));
+  </script>
+</body>
+</html>
