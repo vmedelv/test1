@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Simulador de paciente — Confirmación de horas</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">🏥 Confirmación de Horas <span class="badge">demo</span></a>
+    <nav>
+      <a href="/">Dashboard</a>
+      <a href="/paciente" class="active">Simulador de paciente</a>
+      <a href="/sismaule">SisMaule (agenda maestra)</a>
+      <a href="/kpis">KPIs</a>
+    </nav>
+  </header>
+  <main>
+    <h1>Simulador de paciente</h1>
+    <p class="lead">
+      Esta pantalla hace las veces del teléfono/correo del paciente: muestra los
+      recordatorios que le llegaron (solo los <strong>entregados</strong> por el
+      proveedor) y permite responderlos. Las respuestas se reflejan al instante
+      en el dashboard.
+    </p>
+
+    <div class="card">
+      <label for="selPaciente">Paciente</label>
+      <select id="selPaciente" onchange="cargarInbox()"></select>
+      <div id="contacto"></div>
+    </div>
+
+    <div id="aviso"></div>
+    <div id="inbox"></div>
+  </main>
+
+  <script src="/common.js"></script>
+  <script>
+    let pacientes = [];
+    let inboxData = null;
+
+    function contactoBadge(ok, texto) {
+      return `<span class="badge ${ok ? 'ok' : 'danger'}">${escapeHtml(texto)}</span>`;
+    }
+
+    function renderContacto() {
+      const p = inboxData && inboxData.paciente;
+      if (!p) return;
+      const partes = [];
+      if (p.movil) {
+        partes.push(contactoBadge(p.movilValido, `📱 ${p.movil}${p.movilValido ? '' : ' (dado de baja)'}`));
+        if (p.tieneWhatsapp) partes.push(contactoBadge(p.movilValido, '💬 WhatsApp'));
+      } else {
+        partes.push('<span class="badge">Sin teléfono móvil</span>');
+      }
+      if (p.email) {
+        partes.push(contactoBadge(p.emailValido, `✉️ ${p.email}${p.emailValido ? '' : ' (rebota)'}`));
+      } else {
+        partes.push('<span class="badge">Sin correo</span>');
+      }
+      document.getElementById('contacto').innerHTML =
+        `<div class="chips" style="margin-top:10px">${partes.join(' ')}</div>
+         <p class="footer-note" style="margin-top:8px">Los datos marcados en rojo simulan contactos
+         inválidos en el registro: los envíos a ellos fallan y el sistema lo detecta por los acuses del proveedor.</p>`;
+    }
+
+    function renderInbox() {
+      const el = document.getElementById('inbox');
+      if (!inboxData) { el.innerHTML = ''; return; }
+      const msgs = inboxData.mensajes;
+      if (!msgs.length) {
+        el.innerHTML = '<div class="card meta">Este paciente no ha recibido mensajes (o ninguno pudo ser entregado).</div>';
+        return;
+      }
+      el.innerHTML = msgs.map((m) => {
+        const meta = CANAL_META[m.canal];
+        const esIvr = m.canal === 'ivr';
+        const botones = m.puedeResponder ? `
+          <div class="acciones">
+            <button class="small" onclick="responder('${m.id}','confirmar')">${esIvr ? 'Marcar 1 — Confirmar' : 'Confirmar'}</button>
+            <button class="small danger" onclick="responder('${m.id}','cancelar')">${esIvr ? 'Marcar 2 — Cancelar' : 'Cancelar'}</button>
+            <button class="small secondary" onclick="responder('${m.id}','reprogramar')">${esIvr ? 'Marcar 3 — Reprogramar' : 'Pedir reprogramación'}</button>
+          </div>` : m.respuesta
+          ? `<div class="acciones"><span class="badge accent">Respondido: ${escapeHtml(m.respuesta)}</span></div>`
+          : `<div class="acciones"><span class="badge">La cita ya no admite respuesta (${escapeHtml((ESTADO_META[m.cita.estado] || {}).label || m.cita.estado)})</span></div>`;
+        return `
+          <div class="msg">
+            <div class="head">
+              <span class="canal">${meta.icon} ${meta.label}</span>
+              <span class="badge">${escapeHtml(m.etiqueta)}</span>
+              ${estadoBadge({ estado: m.cita.estado, resultadoFinal: null })}
+              <span class="ts">${fmtFecha(m.ts)}</span>
+            </div>
+            <div class="contenido">${escapeHtml(m.contenido)}</div>
+            <div class="meta" style="font-size:0.8rem; color:var(--muted); margin-top:4px">
+              Cita folio <span class="mono">${escapeHtml(m.cita.folio)}</span> ·
+              ${fmtFecha(m.cita.fechaHora)} · ${escapeHtml(m.cita.establecimiento)}
+            </div>
+            ${botones}
+          </div>`;
+      }).join('');
+    }
+
+    async function responder(msgId, accion) {
+      try {
+        await App.api('POST', `/api/mensajes/${msgId}/responder`, { accion });
+        await cargarInbox();
+      } catch (e) {
+        notice(document.getElementById('aviso'), 'danger', e.message);
+      }
+    }
+
+    async function cargarInbox() {
+      const id = document.getElementById('selPaciente').value;
+      if (!id) return;
+      localStorage.setItem('pacienteDemo', id);
+      inboxData = await App.api('GET', `/api/pacientes/${id}/inbox`);
+      document.getElementById('aviso').innerHTML = '';
+      renderContacto();
+      renderInbox();
+    }
+
+    async function init() {
+      pacientes = await App.api('GET', '/api/pacientes');
+      const sel = document.getElementById('selPaciente');
+      const guardado = localStorage.getItem('pacienteDemo');
+      sel.innerHTML = pacientes.map((p) =>
+        `<option value="${p.id}" ${p.id === guardado ? 'selected' : ''}>${escapeHtml(p.nombre)} — ${escapeHtml(p.rut)}</option>`).join('');
+      await cargarInbox();
+    }
+
+    App.subscribe(() => cargarInbox().catch(() => {}));
+    init().catch((e) => notice(document.getElementById('aviso'), 'danger', e.message));
+  </script>
+</body>
+</html>

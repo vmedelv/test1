@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard — Confirmación de horas</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">🏥 Confirmación de Horas <span class="badge">demo</span></a>
+    <nav>
+      <a href="/" class="active">Dashboard</a>
+      <a href="/paciente">Simulador de paciente</a>
+      <a href="/sismaule">SisMaule (agenda maestra)</a>
+      <a href="/kpis">KPIs</a>
+    </nav>
+  </header>
+  <main>
+    <h1>Dashboard de gestión de pacientes</h1>
+    <p class="lead">Citas de los próximos días y su estado de confirmación, actualizado en tiempo real.</p>
+
+    <div class="card toolbar">
+      <span>🕐 Reloj simulado: <span class="clock" id="reloj">—</span></span>
+      <button class="small secondary" onclick="avanzar(1)">+1 h</button>
+      <button class="small secondary" onclick="avanzar(6)">+6 h</button>
+      <button class="small secondary" onclick="avanzar(12)">+12 h</button>
+      <button class="small secondary" onclick="avanzar(24)">+24 h</button>
+      <span class="spacer"></span>
+      <button class="small" onclick="sincronizar()">Sincronizar SisMaule</button>
+      <span class="meta" id="sync">—</span>
+      <button class="small danger" onclick="reiniciar()">Reiniciar demo</button>
+    </div>
+    <div id="aviso"></div>
+
+    <div class="kpis" id="resumen"></div>
+
+    <div class="card">
+      <div class="row">
+        <div><label for="busqueda">Buscar paciente</label><input id="busqueda" placeholder="Nombre…" oninput="busqueda = this.value; render();"></div>
+        <div class="fit" style="align-self:end"><span class="meta" id="tituloLista"></span></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Paciente</th><th>Cita</th><th>Especialidad</th><th>Estado</th><th>Intentos</th></tr>
+          </thead>
+          <tbody id="tabla"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="detalle"></div>
+
+    <h2>Cola de gestión manual (call center)</h2>
+    <p class="lead">Pacientes que no respondieron por canales automáticos, ordenados por proximidad de la cita.</p>
+    <div class="card table-wrap">
+      <table>
+        <thead><tr><th>Paciente</th><th>Cita</th><th>Especialidad</th><th>Intentos</th><th></th></tr></thead>
+        <tbody id="cola"></tbody>
+      </table>
+    </div>
+
+    <h2>Citas reprogramadas</h2>
+    <div class="card table-wrap">
+      <table>
+        <thead><tr><th>Paciente</th><th>Cita original</th><th>Folio</th><th>Nueva cita</th></tr></thead>
+        <tbody id="reprogramadas"></tbody>
+      </table>
+    </div>
+
+    <h2>Resultados recientes (informados por SisMaule)</h2>
+    <div class="card table-wrap">
+      <table>
+        <thead><tr><th>Paciente</th><th>Cita</th><th>Especialidad</th><th>Estado al momento</th><th>Resultado</th></tr></thead>
+        <tbody id="resueltas"></tbody>
+      </table>
+    </div>
+
+    <p class="footer-note">
+      Demo del sistema descrito en <span class="mono">docs/confirmacion-horas-pacientes/PROPUESTA.md</span>.
+      El tiempo es simulado: avanza el reloj para disparar los pasos de la campaña
+      (T-72h canal preferente → T-48h canal alternativo → T-24h IVR → T-12h gestión manual).
+    </p>
+  </main>
+
+  <script src="/common.js"></script>
+  <script>
+    let data = null;
+    let filtro = 'todas';
+    let busqueda = '';
+    let seleccion = null;
+
+    const FILTROS = [
+      { key: 'todas', label: 'Citas activas', color: '' },
+      { key: 'confirmadas', label: 'Confirmadas', color: 'ok' },
+      { key: 'canceladas', label: 'Canceladas', color: 'danger' },
+      { key: 'sinRespuesta', label: 'Sin respuesta', color: 'warn' },
+      { key: 'pendientes', label: 'Pendientes', color: 'accent' },
+    ];
+
+    function listaActual() {
+      if (!data) return [];
+      if (filtro === 'todas') {
+        return [
+          ...data.listas.pendientes, ...data.listas.sinRespuesta,
+          ...data.listas.confirmadas, ...data.listas.canceladas,
+        ].sort((a, b) => a.fechaHora - b.fechaHora);
+      }
+      return data.listas[filtro] || [];
+    }
+
+    function citaPorId(id) {
+      if (!data) return null;
+      const todas = [
+        ...data.listas.pendientes, ...data.listas.sinRespuesta,
+        ...data.listas.confirmadas, ...data.listas.canceladas,
+        ...data.reprogramadas, ...data.resueltas,
+      ];
+      return todas.find((c) => c.id === id) || null;
+    }
+
+    function render() {
+      if (!data) return;
+      document.getElementById('reloj').textContent = fmtFecha(data.reloj);
+      document.getElementById('sync').textContent =
+        data.lastSyncAt ? `Última sync: ${fmtFecha(data.lastSyncAt)}` : 'Sin sincronizar';
+
+      const r = data.resumen;
+      const cuentas = {
+        todas: r.activas, confirmadas: r.confirmadas, canceladas: r.canceladas,
+        sinRespuesta: r.sinRespuesta, pendientes: r.pendientes,
+      };
+      document.getElementById('resumen').innerHTML = FILTROS.map((f) => `
+        <button class="kpi ${filtro === f.key ? 'active' : ''}" onclick="filtro='${f.key}'; render();">
+          <div class="num">${cuentas[f.key]}</div>
+          <div class="label">${f.label}</div>
+        </button>`).join('') + `
+        <div class="kpi">
+          <div class="num">${r.reprogramadas}</div>
+          <div class="label">Reprogramadas</div>
+          <div class="sub">${r.colaManual} en cola manual</div>
+        </div>`;
+
+      const q = busqueda.trim().toLowerCase();
+      const lista = listaActual().filter((c) => !q || c.paciente.toLowerCase().includes(q));
+      document.getElementById('tituloLista').textContent =
+        `${FILTROS.find((f) => f.key === filtro).label}: ${lista.length} cita(s)`;
+      document.getElementById('tabla').innerHTML = lista.map((c) => `
+        <tr class="clickable ${seleccion === c.id ? 'selected' : ''}" onclick="seleccionar('${c.id}')">
+          <td>${escapeHtml(c.paciente)}<br><span class="meta mono">${escapeHtml(c.rut)}</span></td>
+          <td>${fmtFecha(c.fechaHora)}<br><span class="meta">${fmtRestante(c.horasRestantes)}</span></td>
+          <td>${escapeHtml(c.especialidad)}<br><span class="meta">${escapeHtml(c.establecimiento)}</span></td>
+          <td>${estadoBadge(c)}</td>
+          <td>${c.nIntentos} ${canalChips(c.canalesIntentados)}</td>
+        </tr>`).join('') || '<tr><td colspan="5" class="meta">Sin citas en esta vista.</td></tr>';
+
+      document.getElementById('cola').innerHTML = data.colaManual.map((c) => `
+        <tr>
+          <td>${escapeHtml(c.paciente)}<br><span class="meta mono">${escapeHtml(c.rut)}</span></td>
+          <td>${fmtFecha(c.fechaHora)} <span class="meta">(${fmtRestante(c.horasRestantes)})</span></td>
+          <td>${escapeHtml(c.especialidad)}</td>
+          <td>${c.nIntentos} ${canalChips(c.canalesIntentados)}</td>
+          <td><button class="small" onclick="seleccionar('${c.id}')">Gestionar</button></td>
+        </tr>`).join('') || '<tr><td colspan="5" class="meta">No hay pacientes en la cola. 🎉</td></tr>';
+
+      document.getElementById('reprogramadas').innerHTML = data.reprogramadas.map((c) => `
+        <tr>
+          <td>${escapeHtml(c.paciente)}</td>
+          <td>${fmtFecha(c.fechaHora)} — ${escapeHtml(c.especialidad)}</td>
+          <td class="mono">${escapeHtml(c.folio)}</td>
+          <td>Folio <span class="mono">${escapeHtml(c.reprogramadaAFolio || '—')}</span></td>
+        </tr>`).join('') || '<tr><td colspan="4" class="meta">Sin reprogramaciones.</td></tr>';
+
+      document.getElementById('resueltas').innerHTML = data.resueltas.map((c) => `
+        <tr>
+          <td>${escapeHtml(c.paciente)}</td>
+          <td>${fmtFecha(c.fechaHora)}</td>
+          <td>${escapeHtml(c.especialidad)}</td>
+          <td>${(ESTADO_META[c.estado] || {}).label || c.estado}</td>
+          <td>${estadoBadge(c)}</td>
+        </tr>`).join('') || '<tr><td colspan="5" class="meta">Aún no pasan citas por el reloj simulado.</td></tr>';
+
+      renderDetalle();
+    }
+
+    function renderDetalle() {
+      const el = document.getElementById('detalle');
+      const c = seleccion && citaPorId(seleccion);
+      if (!c) { el.innerHTML = ''; return; }
+      const activa = !c.resultadoFinal && c.horasRestantes > 0 &&
+        !['CANCELADA', 'REPROGRAMADA'].includes(c.estado);
+      const operador = localStorage.getItem('operador') || '';
+      el.innerHTML = `
+        <div class="card">
+          <div class="row">
+            <div>
+              <h2 style="margin-top:0">${escapeHtml(c.paciente)} — folio <span class="mono">${escapeHtml(c.folio)}</span> ${estadoBadge(c)}</h2>
+              <p class="lead">${fmtFecha(c.fechaHora)} (${fmtRestante(c.horasRestantes)}) · ${escapeHtml(c.especialidad)} ·
+                ${escapeHtml(c.profesional)} · ${escapeHtml(c.establecimiento)}</p>
+            </div>
+            <div class="fit"><button class="small secondary" onclick="seleccion=null; render();">Cerrar</button></div>
+          </div>
+          ${activa ? `
+          <div class="row">
+            <div>
+              <label>Reenviar recordatorio</label>
+              <div class="row">
+                <select id="canalReenvio">${c.canalesDisponibles.map((x) =>
+                  `<option value="${x}">${CANAL_META[x].label}</option>`).join('')}</select>
+                <button class="small fit" onclick="reenviar('${c.id}')">Enviar</button>
+              </div>
+            </div>
+            <div>
+              <label>Registrar gestión manual</label>
+              <div class="row">
+                <select id="resGestion" onchange="document.getElementById('horasNueva').parentElement.style.display = this.value === 'reprogramada' ? '' : 'none'">
+                  <option value="confirmada">Confirmada por teléfono</option>
+                  <option value="cancelada">Cancelada por teléfono</option>
+                  <option value="reprogramada">Reprogramada</option>
+                  <option value="inubicable">Inubicable</option>
+                </select>
+                <div style="display:none"><input id="horasNueva" type="number" min="1" value="96" title="Nueva cita en N horas"></div>
+                <input id="opGestion" placeholder="Operador" value="${escapeHtml(operador)}">
+                <button class="small fit" onclick="gestionar('${c.id}')">Registrar</button>
+              </div>
+              <input id="notaGestion" placeholder="Nota (opcional)" style="margin-top:6px">
+            </div>
+          </div>` : ''}
+          <div id="avisoDetalle"></div>
+          <h2>Historial de contactos y gestiones</h2>
+          <ul class="historial">${c.historial.map((h) => `
+            <li><span class="ts">${fmtFecha(h.ts)}${h.operador ? ' · ' + escapeHtml(h.operador) : ''}</span>
+            ${escapeHtml(h.texto)}</li>`).join('') || '<li class="meta">Sin eventos.</li>'}</ul>
+        </div>`;
+    }
+
+    function seleccionar(id) {
+      seleccion = seleccion === id ? null : id;
+      render();
+      if (seleccion) document.getElementById('detalle').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    async function accion(fn) {
+      try {
+        await fn();
+        await cargar();
+      } catch (e) {
+        notice(document.getElementById(seleccion ? 'avisoDetalle' : 'aviso') || document.getElementById('aviso'), 'danger', e.message);
+      }
+    }
+
+    const avanzar = (h) => accion(() => App.api('POST', '/api/reloj/avanzar', { horas: h }));
+    const sincronizar = () => accion(() => App.api('POST', '/api/sincronizar'));
+    const reiniciar = () => { seleccion = null; accion(() => App.api('POST', '/api/seed')); };
+    const reenviar = (id) => accion(() =>
+      App.api('POST', `/api/citas/${id}/reenviar`, { canal: document.getElementById('canalReenvio').value }));
+    const gestionar = (id) => accion(() => {
+      const operador = document.getElementById('opGestion').value;
+      localStorage.setItem('operador', operador);
+      const resultado = document.getElementById('resGestion').value;
+      const body = { resultado, operador, nota: document.getElementById('notaGestion').value };
+      if (resultado === 'reprogramada') {
+        body.nuevaFechaHora = data.reloj + Number(document.getElementById('horasNueva').value) * 3600 * 1000;
+      }
+      return App.api('POST', `/api/citas/${id}/gestionar`, body);
+    });
+
+    async function cargar() {
+      data = await App.api('GET', '/api/dashboard');
+      render();
+    }
+
+    App.subscribe(cargar);
+    cargar().catch((e) => notice(document.getElementById('aviso'), 'danger', e.message));
+  </script>
+</body>
+</html>

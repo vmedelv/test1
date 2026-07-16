@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SisMaule (simulado) — Confirmación de horas</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">🏥 Confirmación de Horas <span class="badge">demo</span></a>
+    <nav>
+      <a href="/">Dashboard</a>
+      <a href="/paciente">Simulador de paciente</a>
+      <a href="/sismaule" class="active">SisMaule (agenda maestra)</a>
+      <a href="/kpis">KPIs</a>
+    </nav>
+  </header>
+  <main>
+    <h1>SisMaule — agenda maestra (simulada)</h1>
+    <p class="lead">
+      Esta pantalla simula el sistema de agenda del Servicio de Salud, que es la
+      <strong>fuente de verdad</strong> de citas. El sistema de confirmación solo
+      lee de aquí y devuelve estados (columna «Espejo confirmación»). Los cambios
+      hechos aquí se reflejan en el dashboard <strong>en la próxima
+      sincronización</strong> (botón del dashboard, o automática al avanzar el reloj).
+    </p>
+
+    <div class="card">
+      <h2 style="margin-top:0">Agendar nueva cita</h2>
+      <div class="row">
+        <div><label>Paciente</label><select id="nPaciente"></select></div>
+        <div><label>Especialidad</label>
+          <select id="nEspecialidad">
+            <option>Cardiología</option><option>Traumatología</option><option>Oftalmología</option>
+            <option>Medicina Interna</option><option>Dermatología</option><option>Ginecología</option>
+          </select>
+        </div>
+        <div><label>Profesional</label><input id="nProfesional" value="Dr. Andrés Molina"></div>
+        <div><label>Establecimiento</label>
+          <select id="nEstablecimiento">
+            <option>Hospital Regional de Talca</option>
+            <option>Hospital de Curicó</option>
+            <option>Hospital de Linares</option>
+          </select>
+        </div>
+        <div><label>¿En cuántas horas?</label><input id="nHoras" type="number" min="1" value="80"></div>
+        <div class="fit"><button onclick="crear()">Agendar</button></div>
+      </div>
+      <div id="aviso"></div>
+    </div>
+
+    <div class="card table-wrap">
+      <table>
+        <thead>
+          <tr><th>Paciente</th><th>Fecha</th><th>Especialidad</th><th>Origen</th><th>Espejo confirmación</th><th>Acciones</th></tr>
+        </thead>
+        <tbody id="tabla"></tbody>
+      </table>
+    </div>
+
+    <p class="footer-note">
+      En producción esta integración sería un adaptador (API, HL7/FHIR, vistas de BD
+      o batch) según lo que exponga la plataforma real — ver §6 de la propuesta.
+      Aquí se simula para demostrar el flujo: crear, mover y cancelar citas en el
+      origen, y ver cómo el sistema de confirmación reacciona al sincronizar.
+    </p>
+  </main>
+
+  <script src="/common.js"></script>
+  <script>
+    let maestro = [];
+    let pacientes = [];
+
+    function origenBadge(m) {
+      if (m.canceladaEnOrigen) return '<span class="badge danger">Cancelada en origen</span>';
+      if (m.resultado) return `<span class="badge">${m.resultado === 'ATENDIDA' ? 'Realizada' : 'Vencida'}</span>`;
+      return '<span class="badge ok">Vigente</span>';
+    }
+
+    function espejoBadge(m) {
+      if (!m.espejo) return '<span class="badge">Aún no sincronizada</span>';
+      return `<span class="mono">${escapeHtml(m.espejo.folio)}</span> ` +
+        estadoBadge({ estado: m.espejo.estado, resultadoFinal: m.espejo.resultadoFinal });
+    }
+
+    function render() {
+      document.getElementById('tabla').innerHTML = maestro.map((m) => `
+        <tr>
+          <td>${escapeHtml(m.paciente)}<br><span class="meta mono">${escapeHtml(m.rut)}</span></td>
+          <td>${fmtFecha(m.fechaHora)}</td>
+          <td>${escapeHtml(m.especialidad)}<br><span class="meta">${escapeHtml(m.establecimiento)}</span></td>
+          <td>${origenBadge(m)}${m.creadaPor === 'confirmacion' ? '<br><span class="badge accent">Creada por reprogramación</span>' : ''}</td>
+          <td>${espejoBadge(m)}</td>
+          <td>
+            ${!m.canceladaEnOrigen && !m.resultado ? `
+              <button class="small secondary" onclick="mover('${m.id}', 24)">Mover +24 h</button>
+              <button class="small danger" onclick="cancelar('${m.id}')">Cancelar</button>` : ''}
+          </td>
+        </tr>`).join('') || '<tr><td colspan="6" class="meta">Agenda vacía.</td></tr>';
+    }
+
+    async function accion(fn) {
+      try {
+        await fn();
+        await cargar();
+        notice(document.getElementById('aviso'), 'info',
+          'Cambio registrado en la agenda maestra. Se reflejará en el sistema de confirmación en la próxima sincronización.');
+      } catch (e) {
+        notice(document.getElementById('aviso'), 'danger', e.message);
+      }
+    }
+
+    const crear = () => accion(() => App.api('POST', '/api/maestro/citas', {
+      pacienteId: document.getElementById('nPaciente').value,
+      especialidad: document.getElementById('nEspecialidad').value,
+      profesional: document.getElementById('nProfesional').value,
+      establecimiento: document.getElementById('nEstablecimiento').value,
+      enHoras: Number(document.getElementById('nHoras').value),
+    }));
+    const mover = (id, horas) => accion(() => App.api('POST', `/api/maestro/citas/${id}/mover`, { horas }));
+    const cancelar = (id) => accion(() => App.api('POST', `/api/maestro/citas/${id}/cancelar`));
+
+    async function cargar() {
+      maestro = await App.api('GET', '/api/maestro');
+      render();
+    }
+
+    async function init() {
+      pacientes = await App.api('GET', '/api/pacientes');
+      document.getElementById('nPaciente').innerHTML = pacientes.map((p) =>
+        `<option value="${p.id}">${escapeHtml(p.nombre)}</option>`).join('');
+      await cargar();
+    }
+
+    App.subscribe(() => cargar().catch(() => {}));
+    init().catch((e) => notice(document.getElementById('aviso'), 'danger', e.message));
+  </script>
+</body>
+</html>
