@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KPIs — Confirmación de horas</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html">🏥 Confirmación de Horas <span class="badge">demo</span></a>
+    <nav>
+      <a href="index.html">Dashboard</a>
+      <a href="paciente.html">Simulador de paciente</a>
+      <a href="sismaule.html">SisMaule (agenda maestra)</a>
+      <a href="kpis.html" class="active">KPIs</a>
+    </nav>
+  </header>
+  <main>
+    <h1>Indicadores de gestión</h1>
+    <p class="lead">Calculados en vivo sobre todas las citas y mensajes del período simulado.</p>
+    <div id="aviso"></div>
+
+    <div class="kpis" id="tiles"></div>
+
+    <h2>Efectividad por canal</h2>
+    <p class="lead">Tasa de respuesta = respuestas recibidas sobre mensajes efectivamente entregados por canal.</p>
+    <div class="card table-wrap">
+      <table>
+        <thead>
+          <tr><th>Canal</th><th>Enviados</th><th>Entregados</th><th>Respuestas</th><th>Confirmaciones</th><th>Tasa de respuesta</th></tr>
+        </thead>
+        <tbody id="canales"></tbody>
+      </table>
+    </div>
+
+    <h2>Calidad de datos de contacto</h2>
+    <div class="card" id="contacto"></div>
+
+    <p class="footer-note">
+      La tasa de inasistencia se calcula sobre citas cuya hora ya pasó en el reloj
+      simulado (resultado informado por SisMaule). Avanza el reloj en el dashboard
+      para generar más historia.
+    </p>
+  </main>
+
+  <script src="lib/core.js"></script>
+  <script src="lib/store.js"></script>
+  <script src="common.js"></script>
+  <script>
+    function tile(num, label, sub) {
+      return `<div class="kpi"><div class="num">${num}</div><div class="label">${label}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+    }
+
+    function barra(v) {
+      if (v == null) return '<span class="meta">sin datos</span>';
+      return `<div class="bar-cell"><span class="val">${pct(v)}</span>
+        <div class="bar-track" style="flex:1"><div class="bar-fill" style="width:${Math.round(v * 100)}%"></div></div></div>`;
+    }
+
+    async function cargar() {
+      const k = await App.api('GET', '/api/kpis');
+
+      document.getElementById('tiles').innerHTML =
+        tile(pct(k.tasaConfirmacion), 'Tasa de confirmación', `${k.confirmadas} de ${k.totalCitas} citas agendadas`) +
+        tile(pct(k.tasaNsp), 'Tasa de inasistencia (NSP)', `${k.nsp} NSP de ${k.pasadas} citas realizadas`) +
+        tile(pct(k.tasaContacto), 'Tasa de contacto', `${k.pacientesContactados} de ${k.pacientesNotificados} pacientes con ≥1 entrega`) +
+        tile(k.anticipacionHoras == null ? '—' : Math.round(k.anticipacionHoras) + ' h',
+          'Anticipación de cancelación', `${k.cancelaciones} cancelación(es): tiempo promedio para reasignar el cupo`);
+
+      document.getElementById('canales').innerHTML = k.canales.map((c) => `
+        <tr>
+          <td>${CANAL_META[c.canal].icon} ${c.label}</td>
+          <td>${c.enviados}</td>
+          <td>${c.entregados}</td>
+          <td>${c.respuestas}</td>
+          <td>${c.confirmaciones}</td>
+          <td style="min-width:180px">${barra(c.tasaRespuesta)}</td>
+        </tr>`).join('');
+
+      const malos = k.pacientesNotificados - k.pacientesContactados;
+      document.getElementById('contacto').innerHTML = `
+        <p style="margin-top:0">De <strong>${k.pacientesNotificados}</strong> pacientes con al menos un envío,
+        <strong>${k.pacientesContactados}</strong> recibieron al menos un mensaje
+        (${pct(k.tasaContacto)}).
+        ${malos > 0
+          ? `<strong>${malos}</strong> paciente(s) no pudieron ser contactados por ningún canal —
+             candidatos a actualización de datos en el próximo contacto presencial.`
+          : 'Todos los pacientes notificados fueron contactados por al menos un canal.'}</p>`;
+    }
+
+    App.subscribe(() => cargar().catch(() => {}));
+    cargar().catch((e) => notice(document.getElementById('aviso'), 'danger', e.message));
+  </script>
+</body>
+</html>
