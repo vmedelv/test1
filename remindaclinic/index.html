@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="es-CL">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>RemindaClinic · Recordatorios de citas</title>
+  <meta name="description" content="Gestiona citas de tu clínica y envía recordatorios por WhatsApp, SMS o correo. Sin servidor." />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">🩺</span>
+      <div>
+        <div class="brand-name">RemindaClinic</div>
+        <div class="brand-sub" id="clinica-nombre">Mi Clínica</div>
+      </div>
+    </div>
+  </header>
+
+  <nav class="nav">
+    <a href="#/agenda">📅<span>Agenda</span></a>
+    <a href="#/citas">🗂️<span>Citas</span></a>
+    <a href="#/pacientes">👤<span>Pacientes</span></a>
+    <a href="#/recordatorios" class="rec">🔔<span>Recordatorios</span><b id="badge-recordatorios" class="badge"></b></a>
+    <a href="#/ajustes">⚙️<span>Ajustes</span></a>
+  </nav>
+
+  <main id="app" class="container"></main>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
