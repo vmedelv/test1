@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RemindaClinic · Recordatorios (demo estático)</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html">🩺 RemindaClinic <span class="badge enviado" style="font-size:.7rem">demo estático</span></a>
+    <nav>
+      <a href="index.html">Reservar</a>
+      <a href="agenda.html">Agenda</a>
+      <a href="recordatorios.html">Recordatorios</a>
+      <a href="cita.html">Mi cita</a>
+      <a href="#" id="resetDemo" title="Borra los datos de este navegador">Reiniciar</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="split">
+      <div>
+        <h1>Bandeja de recordatorios</h1>
+        <p class="sub">Cada cita programa avisos automáticos (24 h y 2 h antes). Aquí ves qué se envió y qué está en cola.</p>
+      </div>
+      <button id="process" class="subtle">📤 Enviar los que ya vencieron</button>
+    </div>
+
+    <div class="hint">
+      En este demo, "enviar" deja el mensaje en esta bandeja. En producción, aquí saldrían SMS,
+      correos o mensajes de WhatsApp reales. La página también los procesa sola cada 30 segundos.
+    </div>
+
+    <div class="grid cols-3" id="tiles" style="margin-top:16px"></div>
+
+    <div class="card">
+      <div class="row">
+        <div>
+          <label for="filter">Filtrar</label>
+          <select id="filter" style="width:auto">
+            <option value="">Todos</option>
+            <option value="pendiente">Pendientes</option>
+            <option value="enviado">Enviados</option>
+            <option value="cancelado">Cancelados</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div id="list"></div>
+  </main>
+
+  <script src="lib/store.js"></script>
+  <script src="lib/reminders.js"></script>
+  <script src="lib/domain.js"></script>
+  <script src="lib/seed.js"></script>
+  <script src="common.js"></script>
+  <script>
+    function loadTiles() {
+      const s = Domain.summary();
+      const tiles = document.getElementById('tiles');
+      tiles.innerHTML = '';
+      [
+        { num: s.reminders.pendiente || 0, lbl: 'Pendientes' },
+        { num: s.reminders.enviado || 0, lbl: 'Enviados' },
+        { num: s.reminders.cancelado || 0, lbl: 'Cancelados' },
+      ].forEach((i) => tiles.appendChild(el('div', { class: 'tile' }, [
+        el('div', { class: 'num' }, String(i.num)), el('div', { class: 'lbl' }, i.lbl),
+      ])));
+    }
+
+    function loadList() {
+      const f = document.getElementById('filter').value;
+      const rems = Reminders.listReminders(f ? { status: f } : {});
+      const list = document.getElementById('list');
+      list.innerHTML = '';
+      if (!rems.length) { list.appendChild(el('div', { class: 'card empty' }, 'No hay recordatorios con ese filtro.')); return; }
+      const card = el('div', { class: 'card' });
+      rems.forEach((r) => {
+        card.appendChild(el('div', { style: 'padding:12px 0;border-bottom:1px solid var(--line)' }, [
+          el('div', { class: 'split' }, [
+            el('div', {}, [
+              el('span', { class: 'badge ' + r.status }, r.status),
+              el('span', { class: 'note', style: 'margin-left:10px' }, `${r.channelLabel} · ${r.kind} · ${r.hoursBefore}h antes`),
+            ]),
+            el('div', { class: 'note' }, r.status === 'enviado' ? `Enviado ${fmtDateTime(r.sentAt)}` : `Programado ${fmtDateTime(r.scheduledFor)}`),
+          ]),
+          el('div', { class: 'note', style: 'margin-top:4px' }, [
+            el('span', {}, `Para ${r.patientName} · cita `),
+            el('a', { href: `cita.html?code=${r.code}`, class: 'code' }, r.code),
+          ]),
+          el('div', { class: 'msg-bubble' }, r.message),
+        ]));
+      });
+      list.appendChild(card);
+    }
+
+    function refresh() { loadTiles(); loadList(); }
+
+    document.getElementById('filter').addEventListener('change', loadList);
+    document.getElementById('process').addEventListener('click', () => {
+      const sent = Reminders.processDue();
+      toast(sent.length ? `${sent.length} recordatorio(s) enviado(s)` : 'No había recordatorios por enviar');
+      refresh();
+    });
+    window.onRemindersSent = () => refresh();
+
+    try { refresh(); } catch (e) { toast(e.message, true); }
+  </script>
+</body>
+</html>

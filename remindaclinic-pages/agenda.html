@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RemindaClinic · Agenda (demo estático)</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html">🩺 RemindaClinic <span class="badge enviado" style="font-size:.7rem">demo estático</span></a>
+    <nav>
+      <a href="index.html">Reservar</a>
+      <a href="agenda.html">Agenda</a>
+      <a href="recordatorios.html">Recordatorios</a>
+      <a href="cita.html">Mi cita</a>
+      <a href="#" id="resetDemo" title="Borra los datos de este navegador">Reiniciar</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="split">
+      <div>
+        <h1>Agenda de la clínica</h1>
+        <p class="sub">Panel del personal: revisa las horas del día y su estado.</p>
+      </div>
+      <button id="process" class="subtle" title="Envía los recordatorios cuya hora ya llegó">📤 Procesar recordatorios</button>
+    </div>
+
+    <div class="grid cols-4" id="tiles"></div>
+
+    <div class="card">
+      <div class="row">
+        <div style="flex:2 1 240px">
+          <label for="prof">Profesional</label>
+          <select id="prof"><option value="">Todos</option></select>
+        </div>
+        <div style="flex:1 1 160px">
+          <label for="date">Fecha</label>
+          <input type="date" id="date">
+        </div>
+        <div style="flex:0 0 auto"><button class="ghost" id="clearDate" type="button">Ver todas</button></div>
+      </div>
+    </div>
+
+    <div id="list"></div>
+  </main>
+
+  <script src="lib/store.js"></script>
+  <script src="lib/reminders.js"></script>
+  <script src="lib/domain.js"></script>
+  <script src="lib/seed.js"></script>
+  <script src="common.js"></script>
+  <script>
+    const STATUSES = ['reservada', 'confirmada', 'atendida', 'no_asistio', 'cancelada'];
+
+    function loadTiles() {
+      const s = Domain.summary();
+      const tiles = document.getElementById('tiles');
+      tiles.innerHTML = '';
+      [
+        { num: s.appointments, lbl: 'Citas totales' },
+        { num: s.byStatus.confirmada || 0, lbl: 'Confirmadas' },
+        { num: s.reminders.enviado || 0, lbl: 'Recordatorios enviados' },
+        { num: s.reminders.pendiente || 0, lbl: 'Recordatorios pendientes' },
+      ].forEach((i) => tiles.appendChild(el('div', { class: 'tile' }, [
+        el('div', { class: 'num' }, String(i.num)), el('div', { class: 'lbl' }, i.lbl),
+      ])));
+    }
+
+    function loadProfs() {
+      const sel = document.getElementById('prof');
+      Domain.listProfessionals().forEach((p) => sel.appendChild(el('option', { value: p.id }, p.name)));
+    }
+
+    function loadList() {
+      const profId = document.getElementById('prof').value;
+      const date = document.getElementById('date').value;
+      const appts = Domain.listAppointments({ professionalId: profId || undefined, date: date || undefined });
+      const list = document.getElementById('list');
+      list.innerHTML = '';
+      if (!appts.length) { list.appendChild(el('div', { class: 'card empty' }, 'No hay citas con esos filtros.')); return; }
+      const groups = {};
+      appts.forEach((a) => { (groups[a.date] = groups[a.date] || []).push(a); });
+      Object.keys(groups).sort().forEach((d) => {
+        const card = el('div', { class: 'card' });
+        card.appendChild(el('h2', {}, fmtDate(d)));
+        const table = el('table');
+        table.appendChild(el('tr', {}, [
+          el('th', {}, 'Hora'), el('th', {}, 'Paciente'), el('th', {}, 'Profesional'),
+          el('th', {}, 'Canal'), el('th', {}, 'Estado'), el('th', {}, 'Acciones'),
+        ]));
+        groups[d].forEach((a) => table.appendChild(row(a)));
+        card.appendChild(table);
+        list.appendChild(card);
+      });
+    }
+
+    function row(a) {
+      const sel = el('select', { style: 'width:auto;padding:6px 8px' });
+      STATUSES.forEach((s) => {
+        const o = el('option', { value: s }, s.replace('_', ' '));
+        if (s === a.status) o.selected = true;
+        sel.appendChild(o);
+      });
+      sel.addEventListener('change', () => {
+        try { Domain.setStatus(a.id, sel.value); toast('Estado actualizado'); refresh(); }
+        catch (e) { toast(e.message, true); }
+      });
+      return el('tr', {}, [
+        el('td', {}, el('strong', {}, a.time)),
+        el('td', {}, [el('div', {}, a.patientName), el('div', { class: 'note' }, a.patientPhone)]),
+        el('td', {}, [el('span', { class: 'dot', style: `background:${a.color};margin-right:6px` }), a.professionalName]),
+        el('td', {}, a.channel),
+        el('td', {}, statusBadge(a.status)),
+        el('td', {}, [sel, el('a', { class: 'pill', href: `cita.html?code=${a.code}`, style: 'margin-left:8px' }, a.code)]),
+      ]);
+    }
+
+    function refresh() { loadTiles(); loadList(); }
+
+    function init() {
+      loadProfs();
+      document.getElementById('prof').addEventListener('change', loadList);
+      document.getElementById('date').addEventListener('change', loadList);
+      document.getElementById('clearDate').addEventListener('click', () => {
+        document.getElementById('date').value = ''; document.getElementById('prof').value = ''; loadList();
+      });
+      document.getElementById('process').addEventListener('click', () => {
+        const sent = Reminders.processDue();
+        toast(sent.length ? `${sent.length} recordatorio(s) enviado(s)` : 'No había recordatorios por enviar');
+        refresh();
+      });
+      // Si el tick de fondo envía algo, refresca los contadores.
+      window.onRemindersSent = () => refresh();
+      refresh();
+    }
+
+    try { init(); } catch (e) { toast(e.message, true); }
+  </script>
+</body>
+</html>
