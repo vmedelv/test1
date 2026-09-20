@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RemindaClinic · Mi cita</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html">🩺 RemindaClinic</a>
+    <nav>
+      <a href="index.html">Reservar</a>
+      <a href="agenda.html">Agenda</a>
+      <a href="recordatorios.html">Recordatorios</a>
+      <a href="cita.html">Mi cita</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>Mi cita</h1>
+    <p class="sub">Ingresa el código que te enviamos para ver, confirmar o cancelar tu hora.</p>
+
+    <div class="card">
+      <div class="row">
+        <div style="flex:1 1 200px">
+          <label for="code">Código de la cita</label>
+          <input id="code" placeholder="Ej: ABC-123" style="text-transform:uppercase">
+        </div>
+        <div style="flex:0 0 auto">
+          <button id="search">Buscar</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="result"></div>
+  </main>
+
+  <script src="common.js"></script>
+  <script>
+    async function lookup(code) {
+      const result = document.getElementById('result');
+      result.innerHTML = '';
+      try {
+        const appt = await api(`/api/lookup?code=${encodeURIComponent(code)}`);
+        render(appt);
+      } catch (e) {
+        result.appendChild(el('div', { class: 'card empty' }, e.message));
+      }
+    }
+
+    function render(a) {
+      const result = document.getElementById('result');
+      result.innerHTML = '';
+      const canAct = a.status !== 'cancelada' && a.status !== 'atendida';
+      const actions = el('div', { class: 'actions', style: 'margin-top:14px' });
+      if (canAct) {
+        if (a.status !== 'confirmada') {
+          actions.appendChild(el('button', {
+            onclick: () => act(a.id, 'confirm'),
+          }, '✅ Confirmar asistencia'));
+        }
+        actions.appendChild(el('button', {
+          class: 'danger', onclick: () => act(a.id, 'cancel'),
+        }, '✖ Cancelar hora'));
+      }
+
+      const rems = el('ul', {}, a.reminders.map((r) =>
+        el('li', {}, [
+          el('span', { class: 'badge ' + r.status }, r.status),
+          el('span', {}, ` ${r.channel.toUpperCase()} · ${r.hoursBefore}h antes · ${fmtDateTime(r.scheduledFor)}`),
+        ])));
+
+      result.appendChild(el('div', { class: 'card' }, [
+        el('div', { class: 'split' }, [
+          el('h2', { style: 'margin:0' }, `${fmtDate(a.date)} · ${a.time}`),
+          statusBadge(a.status),
+        ]),
+        el('p', { class: 'note' }, [
+          el('span', { class: 'dot', style: `background:${a.color};margin-right:6px` }),
+          `${a.professionalName} · ${a.specialty}`,
+        ]),
+        el('div', { class: 'grid cols-2', style: 'margin-top:8px' }, [
+          el('div', {}, [el('div', { class: 'note' }, 'Paciente'), el('div', {}, a.patientName)]),
+          el('div', {}, [el('div', { class: 'note' }, 'Código'), el('div', { class: 'code' }, a.code)]),
+          el('div', {}, [el('div', { class: 'note' }, 'Teléfono'), el('div', {}, a.patientPhone)]),
+          el('div', {}, [el('div', { class: 'note' }, 'Canal de aviso'), el('div', {}, a.channel)]),
+        ]),
+        a.reason ? el('p', { class: 'note', style: 'margin-top:8px' }, `Motivo: ${a.reason}`) : null,
+        actions,
+        el('h2', {}, 'Tus recordatorios'),
+        rems,
+      ]));
+    }
+
+    async function act(id, kind) {
+      try {
+        const a = await api(`/api/appointments/${id}/${kind}`, { method: 'POST' });
+        toast(kind === 'confirm' ? 'Asistencia confirmada' : 'Hora cancelada');
+        render(a);
+      } catch (e) { toast(e.message, true); }
+    }
+
+    document.getElementById('search').addEventListener('click', () => {
+      const c = document.getElementById('code').value.trim();
+      if (c) lookup(c);
+    });
+    document.getElementById('code').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') document.getElementById('search').click();
+    });
+
+    // Si venimos con ?code=... desde otra pagina, busca automaticamente.
+    const params = new URLSearchParams(location.search);
+    if (params.get('code')) {
+      document.getElementById('code').value = params.get('code');
+      lookup(params.get('code'));
+    }
+  </script>
+</body>
+</html>

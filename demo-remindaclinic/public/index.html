@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RemindaClinic · Reservar hora</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html">🩺 RemindaClinic</a>
+    <nav>
+      <a href="index.html">Reservar</a>
+      <a href="agenda.html">Agenda</a>
+      <a href="recordatorios.html">Recordatorios</a>
+      <a href="cita.html">Mi cita</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="hero">
+      <div class="big">Reserva tu hora médica</div>
+      <p class="sub">Elige profesional y horario. Te enviaremos recordatorios automáticos para que no se te olvide.</p>
+    </div>
+
+    <div id="booking">
+      <div class="card">
+        <div class="row">
+          <div style="flex:2 1 260px">
+            <label for="prof">Profesional</label>
+            <select id="prof"></select>
+          </div>
+          <div style="flex:1 1 160px">
+            <label for="date">Fecha</label>
+            <input type="date" id="date">
+          </div>
+        </div>
+        <div id="profInfo" class="note" style="margin-top:8px"></div>
+
+        <label style="margin-top:14px">Horas disponibles</label>
+        <div id="slots" class="slots"></div>
+        <div id="slotsMsg" class="empty" style="display:none"></div>
+      </div>
+
+      <div class="card" id="formCard" style="display:none">
+        <h2>Tus datos</h2>
+        <div class="grid cols-2">
+          <div>
+            <label for="pname">Nombre completo</label>
+            <input id="pname" placeholder="Ej: Juan Pérez">
+          </div>
+          <div>
+            <label for="pphone">Teléfono</label>
+            <input id="pphone" placeholder="+569 1234 5678">
+          </div>
+          <div>
+            <label for="pemail">Email (opcional)</label>
+            <input id="pemail" type="email" placeholder="tu@email.cl">
+          </div>
+          <div>
+            <label for="channel">¿Cómo te recordamos?</label>
+            <select id="channel">
+              <option value="sms">SMS</option>
+              <option value="whatsapp">WhatsApp</option>
+              <option value="email">Email</option>
+            </select>
+          </div>
+        </div>
+        <label for="reason">Motivo (opcional)</label>
+        <textarea id="reason" placeholder="Ej: control anual"></textarea>
+        <div class="split" style="margin-top:14px">
+          <div class="note" id="chosen"></div>
+          <button id="confirm">Confirmar reserva</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="done" style="display:none"></div>
+  </main>
+
+  <script src="common.js"></script>
+  <script>
+    const state = { professionals: [], profId: null, date: todayStr(), slot: null };
+
+    async function init() {
+      document.getElementById('date').value = state.date;
+      document.getElementById('date').min = todayStr();
+      state.professionals = await api('/api/professionals');
+      const sel = document.getElementById('prof');
+      state.professionals.forEach((p) => {
+        sel.appendChild(el('option', { value: p.id }, `${p.name} · ${p.specialty}`));
+      });
+      state.profId = state.professionals[0] && state.professionals[0].id;
+      sel.value = state.profId;
+      sel.addEventListener('change', () => { state.profId = sel.value; state.slot = null; loadSlots(); });
+      document.getElementById('date').addEventListener('change', (e) => {
+        state.date = e.target.value; state.slot = null; loadSlots();
+      });
+      document.getElementById('confirm').addEventListener('click', submit);
+      loadSlots();
+    }
+
+    async function loadSlots() {
+      const box = document.getElementById('slots');
+      const msg = document.getElementById('slotsMsg');
+      box.innerHTML = '';
+      document.getElementById('formCard').style.display = 'none';
+      const prof = state.professionals.find((p) => p.id === state.profId);
+      const dias = prof.days.map((d) => DIAS_CORTO[d]).join(', ');
+      document.getElementById('profInfo').textContent =
+        `Atiende ${dias} · duración ${prof.slotMinutes} min por hora`;
+      let data;
+      try {
+        data = await api(`/api/professionals/${state.profId}/slots?date=${state.date}`);
+      } catch (e) { toast(e.message, true); return; }
+      const free = data.slots.filter((s) => s.available);
+      if (!data.working) {
+        msg.style.display = 'block';
+        msg.textContent = 'El profesional no atiende ese día. Prueba otra fecha.';
+        return;
+      }
+      if (!free.length) {
+        msg.style.display = 'block';
+        msg.textContent = 'No quedan horas libres ese día.';
+        return;
+      }
+      msg.style.display = 'none';
+      data.slots.forEach((s) => {
+        if (s.past) return;
+        const b = el('button', {
+          class: 'slot' + (s.available ? '' : ' off') + (state.slot === s.time ? ' sel' : ''),
+          type: 'button',
+        }, s.time);
+        if (s.available) b.addEventListener('click', () => selectSlot(s.time));
+        else b.disabled = true;
+        box.appendChild(b);
+      });
+    }
+
+    function selectSlot(time) {
+      state.slot = time;
+      document.querySelectorAll('.slot').forEach((n) => {
+        n.classList.toggle('sel', n.textContent === time && !n.classList.contains('off'));
+      });
+      document.getElementById('formCard').style.display = 'block';
+      const prof = state.professionals.find((p) => p.id === state.profId);
+      document.getElementById('chosen').textContent =
+        `${prof.name} · ${fmtDate(state.date)} · ${time}`;
+      document.getElementById('formCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    async function submit() {
+      const payload = {
+        professionalId: state.profId,
+        date: state.date,
+        time: state.slot,
+        patientName: document.getElementById('pname').value,
+        patientPhone: document.getElementById('pphone').value,
+        patientEmail: document.getElementById('pemail').value,
+        channel: document.getElementById('channel').value,
+        reason: document.getElementById('reason').value,
+      };
+      const btn = document.getElementById('confirm');
+      btn.disabled = true;
+      try {
+        const appt = await api('/api/appointments', { method: 'POST', body: JSON.stringify(payload) });
+        showDone(appt);
+      } catch (e) {
+        toast(e.message, true);
+        btn.disabled = false;
+      }
+    }
+
+    function showDone(appt) {
+      document.getElementById('booking').style.display = 'none';
+      const rems = appt.reminders.map((r) =>
+        el('li', {}, `${r.channel.toUpperCase()} · ${r.hoursBefore}h antes (${fmtDateTime(r.scheduledFor)})`));
+      const done = document.getElementById('done');
+      done.style.display = 'block';
+      done.appendChild(el('div', { class: 'card' }, [
+        el('div', { class: 'hero' }, [
+          el('div', { class: 'big' }, '✅ ¡Hora reservada!'),
+          el('p', { class: 'sub' }, 'Guarda tu código para consultar o cancelar tu hora.'),
+        ]),
+        el('div', { class: 'hero' }, el('div', { class: 'big code' }, appt.code)),
+        el('p', { class: 'note', style: 'text-align:center' },
+          `${appt.professionalName} · ${fmtDate(appt.date)} · ${appt.time}`),
+        el('h2', {}, 'Recordatorios programados'),
+        el('ul', {}, rems),
+        el('div', { class: 'actions', style: 'margin-top:12px;justify-content:center' }, [
+          el('a', { class: 'btn', href: `cita.html?code=${appt.code}` }, 'Ver mi cita'),
+          el('a', { class: 'btn ghost', href: 'index.html' }, 'Reservar otra'),
+        ]),
+      ]));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    init().catch((e) => toast(e.message, true));
+  </script>
+</body>
+</html>

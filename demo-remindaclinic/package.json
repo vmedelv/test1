@@ -1,0 +1,11 @@
+{
+  "name": "remindaclinic-demo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Demo funcional (sin dependencias externas) de RemindaClinic: agenda medica con reserva de horas y recordatorios automaticos - Chile MVP",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "seed:reset": "node src/seed.js"
+  }
+}
