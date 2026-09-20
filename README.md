@@ -8,6 +8,17 @@ tomar agua a las horas correctas, registra tus ejercicios y tu progreso, y te da
 Todo funciona **sin servidor**: tus datos se guardan solo en tu teléfono
 (`localStorage`) y la app funciona **offline**.
 
+## 🧩 Demos en este repositorio
+
+Este repo aloja varios prototipos independientes. Con GitHub Pages activo se
+publican en vivo:
+
+| Demo | En vivo | Código |
+| --- | --- | --- |
+| 🏆 Mi Reto Saludable (esta página) | <https://vmedelv.github.io/test1/> | raíz del repo |
+| 🩺 RemindaClinic — agenda médica con recordatorios | <https://vmedelv.github.io/test1/remindaclinic-pages/> | [`remindaclinic-pages/`](remindaclinic-pages) · backend Node en [`demo-remindaclinic/`](demo-remindaclinic) |
+| 🎟️ Ticketing de eventos | <https://vmedelv.github.io/test1/event-ticketing-pages/> | [`event-ticketing-pages/`](event-ticketing-pages) · backend Node en [`demo-event-ticketing/`](demo-event-ticketing) |
+
 ## ✨ Funciones
 
 - **Contador de calorías** con meta diaria calculada según tu perfil
